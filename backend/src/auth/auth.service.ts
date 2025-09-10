@@ -1,7 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as jwt from 'jsonwebtoken';
-import axios from 'axios';
+import axios, {isAxiosError} from 'axios';
 
 interface LoginResponse{
     error?: string;
@@ -34,7 +34,15 @@ export class AuthService {
             const payload = { email };
             return jwt.sign(payload,jwtSecret,{ expiresIn: '1h' });
         } catch (error){
-            throw new Error('Error al validar credenciales: ' + error.message);
+            if(error instanceof UnauthorizedException || error instanceof InternalServerErrorException){
+                throw error;
+            }
+
+            if(axios.isAxiosError(error)){
+                console.error('Error al conectar con puclaro', error.response?.data || error.message);
+            }
+
+            throw new InternalServerErrorException('Error al validar credenciales');
         }
     }
 }
