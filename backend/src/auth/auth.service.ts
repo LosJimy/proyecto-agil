@@ -3,13 +3,17 @@ import { ConfigService } from '@nestjs/config';
 import * as jwt from 'jsonwebtoken';
 import axios from 'axios';
 
+interface LoginResponse{
+    error?: string;
+}
+
 @Injectable()
 export class AuthService {
     constructor(private configService: ConfigService){}
 
     async login(email: string, password:string): Promise<string> {
         try{
-            const respuesta = await axios.get('https://puclaro.ucn.cl/eross/avance/login.php',{
+            const respuesta = await axios.get<LoginResponse>('https://puclaro.ucn.cl/eross/avance/login.php',{
                 params:{
                     email,
                     password
