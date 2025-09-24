@@ -5,17 +5,23 @@ import axios from 'axios';
 
 function isAxiosError(error: any): boolean{
     return error?.isAxiosError == true;
-} 
+};
 
 interface LoginResponse{
     error?: string;
-}
+    rut?: string;
+    carreras?: {
+        codigo: string;
+        nombre: string;
+        catalogo: string;
+    }[];
+};
 
 @Injectable()
 export class AuthService {
     constructor(private configService: ConfigService){}
 
-    async login(email: string, password:string): Promise<string> {
+    async login(email: string, password:string): Promise<{token: string; rut: string; carreras: any[]}> {
         try{
             const respuesta = await axios.get<LoginResponse>('https://puclaro.ucn.cl/eross/avance/login.php',{
                 params:{
@@ -36,7 +42,13 @@ export class AuthService {
             }
             
             const payload = { email };
-            return jwt.sign(payload,jwtSecret,{ expiresIn: '1h' });
+            const token = jwt.sign(payload, jwtSecret, {expiresIn: '1h'});
+
+            return{
+                token,
+                rut: data.rut ?? '',
+                carreras: data.carreras ?? []
+            };
         } catch (error) {
             console.error('Error recibido:', error.response?.data || error.message);
             if(error instanceof UnauthorizedException || error instanceof InternalServerErrorException){
