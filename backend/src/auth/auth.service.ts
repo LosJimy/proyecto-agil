@@ -1,3 +1,4 @@
+//backend/src/auth/auth.service.ts
 import { Injectable, InternalServerErrorException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as jwt from 'jsonwebtoken';
@@ -29,7 +30,7 @@ export class AuthService {
                     password
                 },
             });
-
+            console.log('Respuesta cruda:', respuesta.data);
             const data = respuesta.data;
 
             if (data.error){
