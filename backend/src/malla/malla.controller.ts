@@ -7,18 +7,6 @@ export class MallaController{
     constructor(private readonly mallaService: MallaService){}
 }
 
-@Controller('malla')
-export class MallaController {
-    constructor(private readonly mallaService: MallaService) {}
-
-    @Get(':codigo/:catalogo')
-    async obtenerMalla(
-        @Param('codigo') codigo: string,
-        @Param('catalogo') catalogo: string
-    ){
-        return await this.mallaService.obtenerMalla(codigo, catalogo);
-    }
-}
 
 
 
