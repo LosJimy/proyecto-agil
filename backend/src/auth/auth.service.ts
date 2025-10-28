@@ -42,7 +42,11 @@ export class AuthService {
                 throw new InternalServerErrorException('JWT_SECRET no está definido en el archivo .env');
             }
             
-            const payload = { email };
+            const payload = {
+                email,
+                rut: data.rut,
+                carreras: data.carreras     
+            };
             const token = jwt.sign(payload, jwtSecret, {expiresIn: '1h'});
 
             return{
