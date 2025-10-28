@@ -4,10 +4,14 @@ import axios from 'axios';
 @Injectable()
 export class MallaService{
     async obtenerMalla(codigo: string, catalogo: string){
-        const url = `https://losvilos.ucn.cl/hawaii/api/mallas/${codigo}-${catalogo}`;
+        const url = `https://losvilos.ucn.cl/hawaii/api/mallas/?${codigo}-${catalogo}`;
 
         try{
-            const respuesta = await axios.get(url);
+            const respuesta = await axios.get(url, {
+                headers: {
+                    'X-HAWAII-AUTH': 'jf400fejof13f'
+                }
+            });
             return respuesta.data
         } catch(error){
             if (error.response?.status == 401){
