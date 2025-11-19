@@ -1,0 +1,86 @@
+# docker-compose.dev.yml - Para desarrollo con hot-reload
+#iniciar: docker-compose -f docker-compose.dev.yml up
+version: '3.8'
+
+services:
+  # Base de datos Neo4j
+  neo4j:
+    image: neo4j:5.15-community
+    container_name: neo4j
+    ports:
+      - "7474:7474"  # Neo4j Browser (interfaz web)
+      - "7687:7687"  # Bolt Protocol (conexiones)
+    environment:
+      - NEO4J_AUTH=neo4j/password123  # Usuario: neo4j, Password: password123
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_dbms_memory_pagecache_size=256M  # Reducido para PC con RAM limitada
+      - NEO4J_dbms_memory_heap_max__size=512M  # Reducido para PC con RAM limitada
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_import:/var/lib/neo4j/import
+    restart: unless-stopped
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p password123 'RETURN 1' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # Backend NestJS (desarrollo)
+  backend-dev:
+    image: node:20-alpine
+    container_name: backend-dev
+    working_dir: /app
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - JWT_SECRET=Grande Colo Colo campeón 1991!
+      - NEO4J_URI=bolt://neo4j:7687  # ← Nueva variable
+      - NEO4J_USER=neo4j              # ← Nueva variable
+      - NEO4J_PASSWORD=password123    # ← Nueva variable
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    command: sh -c "npm install && npm run start:dev"
+    depends_on:
+      neo4j:
+        condition: service_healthy  # Espera a que Neo4j esté listo
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  # Frontend Next.js (desarrollo)
+  frontend-dev:
+    image: node:20-alpine
+    container_name: frontend-dev
+    working_dir: /app
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_BASE=http://localhost:3000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    command: sh -c "npm install && npm run dev"
+    depends_on:
+      - backend-dev
+    restart: unless-stopped
+    networks:
+      - app-network
+
+volumes:
+  neo4j_data:
+  neo4j_logs:
+  neo4j_import:
+
+networks:
+  app-network:
+    driver: bridge
