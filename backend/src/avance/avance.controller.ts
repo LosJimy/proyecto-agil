@@ -1,20 +1,30 @@
-import { Controller, Query, Get } from "@nestjs/common";
-import { ApiBearerAuth, ApiQuery, ApiTags } from "@nestjs/swagger";
+import { Controller, Get, NotFoundException, Req, UseGuards } from "@nestjs/common";
+import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { AvanceService } from "./avance.service";
+import { JwtAuthGuard } from "src/auth/jwt-auth.guard";
 
 @ApiTags('avance')
 @ApiBearerAuth()
-@Controller('avance')
+@Controller('usuario')
 export class AvanceController {
     constructor(private readonly avanceService: AvanceService){}
 
-    @Get()
-    @ApiQuery({ name: 'rut', required: true})
-    @ApiQuery({ name: 'codCarrera', required: true})
-    async getAvance(
-        @Query('rut') rut: string,
-        @Query('codCarrera') codCarrera: string
-    ) {
-        return this.avanceService.obtenerAvance(rut, codCarrera);
+    @UseGuards(JwtAuthGuard)
+    @Get('avance')
+    async getAvance(@Req() req) {
+        const {rut, carreras} = req.user;
+
+        if(!carreras || carreras.lenght === 0){
+            throw new NotFoundException ('no hay carreras asociadas');
+        }
+
+        const ultimaCarrera = carreras.reduce((prev, curr) =>
+            parseInt(curr.catalogo) > parseInt(prev.catalogo) ? curr : prev
+        );
+
+
+        console.log('Consultando avance para:', rut, ultimaCarrera.codigo);
+
+        return this.avanceService.obtenerAvance(rut, ultimaCarrera.codigo);
     }
 }

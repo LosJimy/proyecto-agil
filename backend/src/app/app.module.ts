@@ -7,9 +7,8 @@ import { AvanceModule } from 'src/avance/avance.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({
-      isGlobal:true,
-    }), AuthModule,
+    ConfigModule.forRoot({isGlobal:true,}), 
+    AuthModule,
     MallaModule,
     HttpModule,
     AvanceModule,
