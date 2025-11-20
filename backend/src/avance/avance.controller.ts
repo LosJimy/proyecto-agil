@@ -14,7 +14,7 @@ export class AvanceController {
     async getAvance(@Req() req) {
         const {rut, carreras} = req.user;
 
-        if(!carreras || carreras.lenght === 0){
+        if (!carreras || carreras.length === 0) {
             throw new NotFoundException ('no hay carreras asociadas');
         }
 
