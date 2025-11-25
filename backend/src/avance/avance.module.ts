@@ -7,5 +7,6 @@ import { AvanceService } from "./avance.service";
     imports: [HttpModule],
     controllers: [AvanceController],
     providers: [AvanceService],
+    exports: [AvanceService],
 })
 export class AvanceModule {}
