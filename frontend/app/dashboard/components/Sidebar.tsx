@@ -1,4 +1,3 @@
-// app/dashboard/components/Sidebar.tsx
 'use client';
 
 import Image from 'next/image';

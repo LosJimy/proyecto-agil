@@ -1,27 +1,27 @@
-# docker-compose.yml - PRODUCCIÓN
-#iniciar: docker-compose up --build 
+# docker-compose.yml 
 version: '3.8'
 
 services:
-  # Base de datos Neo4j
-  neo4j:
-    image: neo4j:5.15-community
-    container_name: neo4j
+  # MongoDB
+  mongodb:
+    image: mongo:7-jammy
+    container_name: mongodb-prod
     ports:
-      - "7474:7474"  # Neo4j Browser
-      - "7687:7687"  # Bolt Protocol
+      - "27017:27017"
     environment:
-      - NEO4J_AUTH=neo4j/password123  # ⚠️ CAMBIAR en producción
-      - NEO4J_PLUGINS=["apoc"]
-      - NEO4J_dbms_memory_pagecache_size=512M
-      - NEO4J_dbms_memory_heap_max__size=1G
+      - MONGO_INITDB_ROOT_USERNAME=admin        # ← AGREGAR
+      - MONGO_INITDB_ROOT_PASSWORD=12345  # ← AGREGAR
+      - MONGO_INITDB_DATABASE=universidad
     volumes:
-      - neo4j_data:/data
-      - neo4j_logs:/logs
-      - neo4j_import:/var/lib/neo4j/import
-    restart: always
+      - mongodb_data:/data/db
     networks:
       - app-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/universidad --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
 
   # Backend NestJS
   backend:
@@ -33,12 +33,11 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - JWT_SECRET=Grande Colo Colo campeón 1991!  # ⚠️ CAMBIAR en producción
-      - NEO4J_URI=bolt://neo4j:7687
-      - NEO4J_USER=neo4j
-      - NEO4J_PASSWORD=password123  # ⚠️ CAMBIAR en producción
+      - JWT_SECRET=Grande Colo Colo campeón 1991!
+      - MONGO_URI=mongodb://admin:12345@mongodb:27017/universidad?authSource=admin
     depends_on:
-      - neo4j
+      mongodb:
+        condition: service_healthy
     restart: always
     networks:
       - app-network
@@ -48,13 +47,13 @@ services:
     build:
       context: ./frontend
       args:
-        - NEXT_PUBLIC_API_BASE=http://localhost:3000
+        - NEXT_PUBLIC_API_BASE=http://backend:3000
     container_name: frontend
     ports:
       - "3001:3001"
     environment:
       - NODE_ENV=production
-      - NEXT_PUBLIC_API_BASE=http://localhost:3000
+      - NEXT_PUBLIC_API_BASE=http://backend:3000
     depends_on:
       - backend
     restart: always
@@ -62,9 +61,7 @@ services:
       - app-network
 
 volumes:
-  neo4j_data:
-  neo4j_logs:
-  neo4j_import:
+  mongodb_data:
 
 networks:
   app-network:

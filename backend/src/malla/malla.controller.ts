@@ -1,13 +1,16 @@
-// backend/src/malla/malla.controller.ts
-import { Controller, Get, Post, UseGuards, Request, NotFoundException } from '@nestjs/common';
+// backend/src/malla/malla.controller.ts - REEMPLAZAR COMPLETAMENTE
+
+import { Controller, Get, UseGuards, Request, NotFoundException } from '@nestjs/common';
 import { MallaService } from './malla.service';
+import { OptimizacionService } from './optimizacion.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { AvanceService } from '../avance/avance.service'; // ← Importar
+import { AvanceService } from '../avance/avance.service';
 
 @Controller('usuario')
 export class MallaController {
   constructor(
     private readonly mallaService: MallaService,
+    private readonly optimizacionService: OptimizacionService,
     private readonly avanceService: AvanceService 
   ) {}
 
@@ -32,29 +35,6 @@ export class MallaController {
     );
   }
 
-  // Nuevo endpoint: Cargar malla en Neo4j manualmente
-  @UseGuards(JwtAuthGuard)
-  @Post('malla/cargar-neo4j')
-  async cargarMallaEnNeo4j(@Request() req) {
-    const { carreras } = req.user;
-
-    if (!carreras || carreras.length == 0) {
-      throw new NotFoundException('No hay carreras asociadas');
-    }
-
-    const ultimaCarrera = carreras.reduce((prev, curr) =>
-      parseInt(curr.catalogo) > parseInt(prev.catalogo) ? curr : prev
-    );
-
-    console.log('Cargando malla en Neo4j:', ultimaCarrera.codigo, ultimaCarrera.catalogo);
-
-    return this.mallaService.cargarMallaEnNeo4j(
-      ultimaCarrera.codigo,
-      ultimaCarrera.catalogo
-    );
-  }
-
-  // Nuevo endpoint: Obtener ramos disponibles
   @UseGuards(JwtAuthGuard)
   @Get('malla/disponibles')
   async obtenerRamosDisponibles(@Request() req) {
@@ -70,19 +50,54 @@ export class MallaController {
     
     console.log('Obteniendo ramos disponibles para:', rut, ultimaCarrera.codigo);
 
-    // Obtener el avance del usuario (array de AvanceItem)
-    const avance = await this.avanceService.obtenerAvance(rut, ultimaCarrera.codigo);
+    // Obtener malla y avance
+    const [malla, avance] = await Promise.all([
+      this.mallaService.obtenerMalla(ultimaCarrera.codigo, ultimaCarrera.catalogo),
+      this.avanceService.obtenerAvance(rut, ultimaCarrera.codigo)
+    ]);
     
-    // Filtrar ramos aprobados y extraer códigos
-    // Nota: La API retorna 'status' y 'course' en inglés
     const ramosAprobados = avance
       .filter(ramo => ramo.status === 'APROBADO')
       .map(ramo => ramo.course);
 
     console.log('Ramos aprobados encontrados:', ramosAprobados.length);
 
-    // Pasar el array de códigos de ramos aprobados
-    return this.mallaService.obtenerRamosDisponibles(ramosAprobados);
+    return this.optimizacionService.obtenerRamosDisponibles(malla, ramosAprobados);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('malla/optimizar')
+  async optimizarRuta(@Request() req) {
+    const { rut, carreras } = req.user;
+
+    if (!carreras || carreras.length == 0) {
+      throw new NotFoundException('No hay carreras asociadas');
+    }
+
+    const ultimaCarrera = carreras.reduce((prev, curr) =>
+      parseInt(curr.catalogo) > parseInt(prev.catalogo) ? curr : prev
+    );
+
+    console.log('Optimizando ruta para:', rut, ultimaCarrera.codigo);
+
+    // Obtener malla y avance
+    const [malla, avance] = await Promise.all([
+      this.mallaService.obtenerMalla(ultimaCarrera.codigo, ultimaCarrera.catalogo),
+      this.avanceService.obtenerAvance(rut, ultimaCarrera.codigo)
+    ]);
+    
+    const ramosAprobados = avance
+      .filter(ramo => ramo.status === 'APROBADO')
+      .map(ramo => ramo.course);
+
+    console.log('Calculando ruta óptima con', ramosAprobados.length, 'ramos aprobados');
+
+    return this.optimizacionService.calcularProyeccionOptima(
+      malla, 
+      ramosAprobados,
+      30, // máximo de créditos por semestre
+      20  
+    );
   }
 }
 
