@@ -20,8 +20,8 @@ export default function HeaderProyeccion({
     <div className="flex-shrink-0 px-4 py-2 border-b border-gray-300 bg-white">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">CREAR PROYECCIÓN</h1>
-          <div className="text-xs text-teal-700 font-medium">
+          <h1 className="text-xl font-bold text-gray-900">Crear Proyección</h1>
+          <div className="text-xs text-gray-700 font-medium">
             Personaliza tu ruta académica óptima
           </div>
         </div>

@@ -61,7 +61,7 @@ export default function TarjetaSemestre({
     >
       {/* Header del semestre */}
       <div className={`flex-shrink-0 text-white flex items-center justify-between px-3 py-2 ${
-        creditosExcedidos ? 'bg-red-600' : 'bg-teal-700'
+        creditosExcedidos ? 'bg-red-600' : 'bg-teal-800'
       }`}>
         <div className="flex items-center gap-2">
           <span className="font-bold text-sm">{toRoman(semestre.numero)}</span>

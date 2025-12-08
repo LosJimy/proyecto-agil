@@ -6,6 +6,6 @@ export class LoginDto{
     email: string;
 
     @IsString({ message: 'La contrasena debe ser un texto'})
-    @MinLength(6, {message: 'La contrasena debe tener minimo 6 caracteres'})
+    @MinLength(4, {message: 'La contrasena debe tener minimo 4 caracteres'})
     password:string;
 }
