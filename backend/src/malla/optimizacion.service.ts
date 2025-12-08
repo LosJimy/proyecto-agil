@@ -250,6 +250,23 @@ export class OptimizacionService {
       }
     }
     
+    if (creditosActuales < maxCreditos){
+      const terminales = disponibles.filter(r => r.ramosSiguientes == 0);
+      for (const ramo of terminales){
+        if(!ramos.some(asignado => asignado.codigo == ramo.codigo) &&
+      creditosActuales + ramo.creditos <= maxCreditos){
+        ramos.push({
+          codigo: ramo.codigo,
+          asignatura: ramo.asignatura,
+          creditos: ramo.creditos,
+          nivel: ramo.nivel,
+          razon: 'Ramo terminal (no desbloquea otros)',
+        });
+        creditosActuales += ramo.creditos;
+      }
+      }
+    }
+
     return {
       ramos,
       totalCreditos: creditosActuales,
