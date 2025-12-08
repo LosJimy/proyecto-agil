@@ -35,7 +35,7 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-[#0F758C] to-[#154D59] p-6">
+    <main className="min-h-screen flex flex-col items-center justify-center bg-teal-700 p-6">
       {/* Logos */}
     <div className="flex items-center justify-center gap-16 mb-6">
       <Image src="/ucnLogo.png" alt="Logo UCN" width={80} height={80} />
