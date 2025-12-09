@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { obtenerMalla, obtenerAvance, obtenerRutaOptima, guardarProyeccion, type Ramo, type ProyeccionOptima, type AvanceItem } from '@/lib/api';
 import ModalNombre from '../components/ModalNombre';
@@ -33,6 +33,102 @@ export default function CrearProyeccionPage() {
   const [ramoArrastrado, setRamoArrastrado] = useState<Ramo | null>(null);
   const [semestreHover, setSemestreHover] = useState<number | null>(null);
 
+  // Slider / navegación horizontal por ancho de página
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const CARD_WIDTH = 200; // debe coincidir con el ancho usado en gridTemplateColumns
+  const GAP = 8; // gap-2 -> 0.5rem -> 8px
+
+  const getPageCount = useRef<number | null>(null);
+  const totalWidthRef = useRef<number>(0);
+  const maxScrollLeftRef = useRef<number>(0);
+
+  // actualiza el valor cacheado cuando cambian semestres
+  useEffect(() => {
+    const num = proyeccionActual?.semestres.length || 1;
+    const el = containerRef.current;
+    if (!el) {
+      getPageCount.current = 1;
+      totalWidthRef.current = 0;
+      maxScrollLeftRef.current = 0;
+      return;
+    }
+    const containerWidth = el.clientWidth || 1;
+    const totalWidth = num * (CARD_WIDTH + GAP) - GAP;
+    getPageCount.current = Math.max(1, Math.ceil(totalWidth / containerWidth));
+    totalWidthRef.current = totalWidth;
+    maxScrollLeftRef.current = Math.max(0, totalWidth - containerWidth);
+  }, [proyeccionActual?.semestres.length]);
+
+  // Recalcula páginas al redimensionar para mantener el slider en sync
+  useEffect(() => {
+    const onResize = () => {
+      const num = proyeccionActual?.semestres.length || 1;
+      const el = containerRef.current;
+      if (!el) {
+        getPageCount.current = 1;
+        return;
+      }
+      const containerWidth = el.clientWidth || 1;
+      const totalWidth = num * (CARD_WIDTH + GAP) - GAP;
+      getPageCount.current = Math.max(1, Math.ceil(totalWidth / containerWidth));
+      setCurrentPage((prev) => Math.min(prev, getPageCount.current ?? 1));
+    };
+
+    window.addEventListener('resize', onResize);
+    onResize();
+    return () => window.removeEventListener('resize', onResize);
+  }, [proyeccionActual?.semestres.length]);
+
+  const scrollToPage = (page: number) => {
+    const el = containerRef.current;
+    if (!el) return;
+    const containerWidth = el.clientWidth || 1;
+    const max = getPageCount.current ?? 1;
+    const clamped = Math.min(Math.max(page, 1), max);
+    const desired = (clamped - 1) * containerWidth;
+    const left = Math.min(desired, maxScrollLeftRef.current || 0);
+    el.scrollTo({ left, behavior: 'smooth' });
+    setCurrentPage(clamped);
+  };
+
+  const prevSemestre = () => {
+    setCurrentPage((cur) => {
+      const next = Math.max(1, cur - 1);
+      scrollToPage(next);
+      return next;
+    });
+  };
+
+  const nextSemestre = () => {
+    const max = getPageCount.current ?? 1;
+    setCurrentPage((cur) => {
+      const next = Math.min(max, cur + 1);
+      scrollToPage(next);
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const left = el.scrollLeft;
+      const containerWidth = el.clientWidth || 1;
+      const max = getPageCount.current ?? 1;
+      // si estamos cerca del final, fijar a la última página
+      if (left >= (maxScrollLeftRef.current - 2)) {
+        setCurrentPage(max);
+        return;
+      }
+      const idx = Math.round(left / containerWidth) + 1;
+      const clamped = Math.min(Math.max(idx, 1), max);
+      setCurrentPage(clamped);
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [proyeccionActual]);
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -63,8 +159,8 @@ export default function CrearProyeccionPage() {
         
         const criticos = new Set(
           Array.from(conteoRamos.entries())
-            .filter(([_, count]) => count >= 3)
-            .map(([codigo, _]) => codigo)
+            .filter(([, count]) => count >= 3)
+            .map(([codigo]) => codigo)
         );
         setRamosCriticos(criticos);
 
@@ -383,10 +479,41 @@ export default function CrearProyeccionPage() {
       )}
 
       <div className="flex-1 p-3 overflow-auto">
+        <div className="mb-3 flex items-center gap-3 px-2">
+          <button
+            className="px-3 py-1 bg-white border rounded shadow-sm hover:bg-gray-100 text-black"
+            onClick={prevSemestre}
+            aria-label="Anterior semestre"
+          >
+            ←
+          </button>
+          <button
+            className="px-3 py-1 bg-white border rounded shadow-sm hover:bg-gray-100 text-black"
+            onClick={nextSemestre}
+            aria-label="Siguiente semestre"
+          >
+            →
+          </button>
+
+          <div className="flex-1">
+            <input
+              type="range"
+              min={1}
+              max={getPageCount.current ?? 1}
+              value={currentPage}
+              onChange={(e) => scrollToPage(Number(e.target.value))}
+              className="w-full"
+            />
+          </div>
+
+          
+        </div>
+
         <div 
+          ref={containerRef}
           className="grid gap-2 h-full overflow-x-auto"
           style={{ 
-          gridTemplateColumns: `repeat(${proyeccionActual?.semestres.length || 1}, 200px)`,
+            gridTemplateColumns: `repeat(${proyeccionActual?.semestres.length || 1}, 200px)`,
           }}
         >
           {proyeccionActual?.semestres.map((semestre) => (
