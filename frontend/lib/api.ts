@@ -121,6 +121,15 @@ export async function obtenerRamosDisponibles(): Promise<Ramo[]> {
 }
 
 /**
+ * Obtener la malla curricular de un catálogo específico
+ */
+export async function obtenerMallaPorCatalogo(catalogo: string): Promise<Ramo[]> {
+  return api<Ramo[]>(`/usuario/malla/catalogo/${catalogo}`, {
+    headers: getAuthHeaders(),
+  });
+}
+
+/**
  * Obtener la proyección óptima para egresar lo más rápido posible
  */
 export async function obtenerRutaOptima(): Promise<ProyeccionOptima> {
