@@ -37,9 +37,9 @@ export default function Sidebar() {
   ];
 
   return (
-    <div className="w-[200px] bg-[#1a5a6b] h-screen flex flex-col text-white">
+    <div className="w-[200px] bg-teal-700 h-screen flex flex-col text-white">
       {/* Header con logos */}
-      <div className="p-6 border-b border-[#145060]">
+      <div className="p-6 border-b-2 border-teal-800">
         <div className="flex items-center gap-3 mb-6">
           <Image 
             src="/ucnLogo.png" 
@@ -59,10 +59,10 @@ export default function Sidebar() {
         
         {/* Nombre del estudiante */}
         <div className="text-center">
-          <div className="text-xs uppercase tracking-wide mb-1">
+          <div className="text-base uppercase tracking-wide mb-1">
             {user?.rut ? `RUT: ${user.rut}` : 'Estudiante'}
           </div>
-          <div className="text-xs uppercase tracking-wide font-semibold line-clamp-2">
+          <div className="text-base uppercase tracking-wide font-semibold line-clamp-2">
             {carreraName}
           </div>
         </div>
@@ -80,8 +80,8 @@ export default function Sidebar() {
               onClick={() => router.push(item.href)}
               className={`w-full px-6 py-3 flex items-center gap-3 text-left transition-colors ${
                 isActive 
-                  ? 'bg-[#145060] text-white' 
-                  : 'text-gray-200 hover:bg-[#145060]/50'
+                  ? 'bg-teal-700 text-white' 
+                  : 'text-gray-200 hover:bg-teal-800'
               }`}
             >
               <Icon size={20} />

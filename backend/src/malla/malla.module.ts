@@ -4,7 +4,7 @@ import { Module } from '@nestjs/common';
 import { MallaController } from './malla.controller';
 import { MallaService } from './malla.service';
 import { OptimizacionService } from './optimizacion.service';
-import { AvanceModule } from 'src/avance/avance.module';
+import { AvanceModule } from '../avance/avance.module';
 
 @Module({
   imports: [AvanceModule],

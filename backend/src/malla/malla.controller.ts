@@ -96,7 +96,7 @@ export class MallaController {
       malla, 
       ramosAprobados,
       30, // máximo de créditos por semestre
-      20  
+      25  
     );
   }
 }

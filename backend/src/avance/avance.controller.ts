@@ -1,7 +1,7 @@
 import { Controller, Get, NotFoundException, Req, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { AvanceService } from "./avance.service";
-import { JwtAuthGuard } from "src/auth/jwt-auth.guard";
+import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 
 @ApiTags('avance')
 @ApiBearerAuth()
