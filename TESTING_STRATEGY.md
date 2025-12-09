@@ -1,4 +1,4 @@
-# 📋 Estrategia de Testing 
+#  Estrategia de Testing 
 
 ## 1. Visión General
 

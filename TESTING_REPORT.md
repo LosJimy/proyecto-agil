@@ -1,20 +1,5 @@
 #  Reporte de Testing - Proyecto PAGIL
 
-
-##  Resumen Ejecutivo
-
-### Objetivos Cumplidos
-
-| Objetivo | Meta | Estado | Progreso |
-|----------|------|--------|----------|
-| Unit Tests | >80% cobertura |  En curso | 90% |
-| Integration Tests | Todos endpoints |  En curso | 85% |
-| E2E Tests | Flujos completos |  En curso | 80% |
-| Documentación | Completa |  En curso | 100% |
-| CI/CD | Automatizado |  Pendiente | 0% |
-
----
-
 ##  Unit Tests
 
 ### 1. AuthService 
