@@ -49,7 +49,7 @@ export class OptimizacionService {
     });
   }
 
-  /**
+/**
    * Calcular la proyección óptima para egresar lo más rápido posible
    */
   calcularProyeccionOptima(
@@ -58,10 +58,16 @@ export class OptimizacionService {
     maxCreditosPorSemestre: number = 30,
     minCreditosPorSemestre: number = 20
   ): ProyeccionOptima {
-    
-    const ramosPendientes = mallaCurricular.filter(
-      ramo => !ramosAprobados.includes(ramo.codigo)
-    );
+    // Normalizar la malla
+    const malla = mallaCurricular.map(r => ({
+      codigo: String(r.codigo).trim(),
+      asignatura: String(r.asignatura || '').trim(),
+      creditos: typeof r.creditos === 'number' ? r.creditos : Number(String(r.creditos).replace(',', '.')) || 0,
+      nivel: typeof r.nivel === 'number' ? r.nivel : Number(String(r.nivel)) || 0,
+      prereq: String(r.prereq || '').trim(),
+    }));
+ 
+    const ramosPendientes = malla.filter(ramo => !ramosAprobados.includes(ramo.codigo));
     
     if (ramosPendientes.length === 0) {
       return {
@@ -73,54 +79,21 @@ export class OptimizacionService {
       };
     }
     
-    // Identificar el Capstone
-    const nivelMaximo = Math.max(...mallaCurricular.map(r => r.nivel));
-    const ramosCapstone = mallaCurricular.filter(r => 
+    // Identificar Capstone
+    const nivelMaximo = Math.max(...malla.map(r => r.nivel));
+    const ramosCapstone = malla.filter(r => 
       r.nivel === nivelMaximo && 
       (r.codigo.toLowerCase().includes('capstone') || 
       r.codigo.toLowerCase().includes('proyecto') ||
       r.asignatura.toLowerCase().includes('capstone'))
     );
     
-    console.log(`📚 Nivel máximo detectado: ${nivelMaximo}`);
+    console.log(`📚 Nivel máximo: ${nivelMaximo}`);
     if (ramosCapstone.length > 0) {
-      console.log(`🎓 Capstone detectado: ${ramosCapstone.map(r => r.codigo).join(', ')}`);
+      console.log(`🎓 Capstone: ${ramosCapstone.map(r => r.codigo).join(', ')}`);
     }
     
-    const mapaRamos = new Map<string, Ramo>();
-    mallaCurricular.forEach(ramo => mapaRamos.set(ramo.codigo, ramo));
-    
-    // Calcular métricas
-    const ramosConPrioridad = ramosPendientes.map(ramo => {
-      const prereqs = this.obtenerPrerrequisitos(ramo);
-      // Filtrar prerrequisitos que NO están aprobados aún
-      const prereqsPendientes = prereqs.filter(p => !ramosAprobados.includes(p));
-      
-      const ramosSiguientes = ramosPendientes.filter(r => {
-        const reqsDeR = this.obtenerPrerrequisitos(r);
-        return reqsDeR.includes(ramo.codigo);
-      }).length;
-      
-      const esTerminal = ramosSiguientes === 0;
-      const esCapstone = ramosCapstone.some(c => c.codigo === ramo.codigo);
-      
-      // Puede tomarse ahora si NO tiene prereqs O si AL MENOS UNO está aprobado
-      const puedeTomarseAhora = prereqs.length === 0 || prereqs.some(p => ramosAprobados.includes(p));
-      
-      return {
-        ...ramo,
-        prereqsPendientes: prereqsPendientes.length,
-        ramosSiguientes,
-        puedeTomarseAhora,
-        esTerminal,
-        esCapstone,
-      };
-    });
-    
-    // Separar categorías
-    const ramosCriticos = ramosConPrioridad.filter(r => !r.esTerminal && !r.esCapstone);
-    
-    // Separar electivos (Formación Profesional Electiva, etc.)
+    // Helper: es electivo
     const esElectivo = (ramo: any) => {
       const nombreLower = ramo.asignatura.toLowerCase();
       return nombreLower.includes('electiv') || 
@@ -128,277 +101,178 @@ export class OptimizacionService {
              nombreLower.includes('formacion profesional');
     };
     
-    // Separar ramos críticos en: normales y electivos
-    const ramosCriticosNormales = ramosCriticos.filter(r => !esElectivo(r));
-    const ramosElectivos = ramosCriticos.filter(r => esElectivo(r));
+    // Calcular métricas para todos los ramos
+    const ramosConPrioridad = ramosPendientes.map(ramo => {
+      const prereqs = this.obtenerPrerrequisitos(ramo);
+      const prereqsPendientes = prereqs.filter(p => !ramosAprobados.includes(p));
+      
+      const ramosSiguientes = ramosPendientes.filter(r => {
+        const reqsDeR = this.obtenerPrerrequisitos(r);
+        return reqsDeR.includes(ramo.codigo);
+      }).length;
+      
+      const esCapstone = ramosCapstone.some(c => c.codigo === ramo.codigo);
+      const puedeTomarseAhora = prereqs.length === 0 || prereqs.some(p => ramosAprobados.includes(p));
+      
+      return {
+        ...ramo,
+        prereqsPendientes: prereqsPendientes.length,
+        ramosSiguientes,
+        puedeTomarseAhora,
+        esCapstone,
+        esElectivo: esElectivo(ramo),
+      };
+    });
     
-    const ramosTerminales = ramosConPrioridad.filter(r => r.esTerminal && !r.esCapstone);
+    // Separar Capstones (van al final siempre)
     const capstones = ramosConPrioridad.filter(r => r.esCapstone);
+    const ramosNormales = ramosConPrioridad.filter(r => !r.esCapstone);
     
-    console.log(`📊 Distribución:`);
-    console.log(`   - Críticos (desbloquean): ${ramosCriticos.length}`);
-    console.log(`   - Electivos: ${ramosElectivos.length}`);
-    console.log(`   - Terminales: ${ramosTerminales.length}`);
-    console.log(`   - Capstone: ${capstones.length}`);
-    
-    // DEBUG: Mostrar algunos electivos detectados
-    if (ramosElectivos.length > 0) {
-      console.log(`   📋 Primeros 5 electivos:`);
-      ramosElectivos.slice(0, 5).forEach(e => {
-        console.log(`      - ${e.codigo}: ${e.asignatura} (${e.creditos} SCT, NF ${e.nivel})`);
-      });
-    }
+    console.log(`📊 Total ramos pendientes: ${ramosPendientes.length}`);
+    console.log(`   - Ramos normales: ${ramosNormales.length}`);
+    console.log(`   - Capstones: ${capstones.length}`);
     
     const semestres: SemestreOptimizado[] = [];
     const aprobadosSimulados = new Set(ramosAprobados);
     const asignados = new Set<string>();
     let semestreNumero = 1;
     
+    // ALGORITMO UNIFICADO: Llenar semestre por semestre hasta el máximo
+    console.log(`\n🔄 Distribuyendo todos los ramos semestre por semestre...`);
+    
     const maxIteraciones = 30;
     let iteraciones = 0;
     
-    // FASE 1: Distribuir ramos CRÍTICOS (no electivos)
-    console.log(`\n🔄 FASE 1: Distribuyendo ramos críticos...`);
-    while (asignados.size < ramosCriticos.length && iteraciones < maxIteraciones) {
+    while (asignados.size < ramosNormales.length && iteraciones < maxIteraciones) {
       iteraciones++;
       
-      let disponibles = ramosCriticos
+      // 1. Obtener ramos disponibles (prereqs cumplidos)
+      let disponibles = ramosNormales
         .filter(ramo => {
           if (asignados.has(ramo.codigo)) return false;
           const prereqs = this.obtenerPrerrequisitos(ramo);
           if (prereqs.length === 0) return true;
           return prereqs.some(p => aprobadosSimulados.has(p));
-        })
-        .sort((a, b) => this.compararPrioridad(a, b));
+        });
       
       if (disponibles.length === 0) {
-        const pendientes = ramosCriticos.filter(r => !asignados.has(r.codigo));
+        const pendientes = ramosNormales.filter(r => !asignados.has(r.codigo));
         if (pendientes.length === 0) break;
         
         const nivelMasBajo = Math.min(...pendientes.map(r => r.nivel));
-        console.warn(`⚠️ Bloqueo en semestre ${semestreNumero}. Agregando nivel ${nivelMasBajo}`);
+        console.warn(`⚠️ Bloqueo en semestre ${semestreNumero}. Forzando nivel ${nivelMasBajo}`);
         
         disponibles = pendientes
           .filter(r => r.nivel === nivelMasBajo)
-          .sort((a, b) => this.compararPrioridad(a, b))
           .map(r => ({ ...r, advertencia: true }));
         
         if (disponibles.length === 0) break;
       }
       
-      const semestreActual = this.armarSemestre(
-        disponibles,
-        maxCreditosPorSemestre,
-        minCreditosPorSemestre
-      );
-      
-      if (semestreActual.ramos.length === 0) break;
-      
-      semestreActual.ramos.forEach(ramo => {
-        asignados.add(ramo.codigo);
-        aprobadosSimulados.add(ramo.codigo);
+      // 2. Ordenar por prioridad: que desbloquean más → nivel bajo → créditos altos
+      const disponiblesTyped: Array<typeof ramosConPrioridad[0] & { advertencia?: boolean }> = disponibles.map(d => ({ ...d, advertencia: (d as any).advertencia }));
+      disponiblesTyped.sort((a, b) => {
+        if (a.ramosSiguientes !== b.ramosSiguientes) {
+          return b.ramosSiguientes - a.ramosSiguientes;
+        }
+        if (a.nivel !== b.nivel) {
+          return a.nivel - b.nivel;
+        }
+        return b.creditos - a.creditos;
       });
+      
+      // 3. Llenar semestre COMPLETO usando algoritmo greedy
+      const semestreActual: SemestreOptimizado['ramos'] = [];
+      let creditosActuales = 0;
+      
+      console.log(`\n📦 Semestre ${semestreNumero} (disponibles: ${disponibles.length})`);
+      // 3a. FASE CRÍTICA: Agregar ramos de alta prioridad (desbloquean otros)
+      const ramosAltaPrioridad = disponiblesTyped.filter(r => r.ramosSiguientes > 0);
+      for (const ramo of ramosAltaPrioridad) {
+        if (creditosActuales + ramo.creditos <= maxCreditosPorSemestre) {
+          semestreActual.push({
+            codigo: ramo.codigo,
+            asignatura: ramo.asignatura,
+            creditos: ramo.creditos,
+            nivel: ramo.nivel,
+            razon: ramo.advertencia 
+              ? '⚠️ Forzado por bloqueo' 
+              : `🔑 Desbloquea ${ramo.ramosSiguientes} ramo(s)`,
+          });
+          creditosActuales += ramo.creditos;
+          asignados.add(ramo.codigo);
+          aprobadosSimulados.add(ramo.codigo);
+          console.log(`   ✓ ${ramo.codigo} (${ramo.creditos} SCT) - Desbloquea ${ramo.ramosSiguientes}`);
+        }
+      }
+      // 3b. LLENADO GREEDY: Agregar lo que quepa hasta el máximo
+      const ramosRestantes = disponiblesTyped.filter(r => !asignados.has(r.codigo));      
+      // Ordenar por créditos descendente para mejor empaquetamiento
+      ramosRestantes.sort((a, b) => b.creditos - a.creditos);
+      
+      for (const ramo of ramosRestantes) {
+        if (creditosActuales + ramo.creditos <= maxCreditosPorSemestre) {
+          const razon = ramo.esElectivo 
+            ? '📚 Electivo' 
+            : (ramo.ramosSiguientes === 0 ? '🏁 Terminal' : 'Disponible');
+            
+          semestreActual.push({
+            codigo: ramo.codigo,
+            asignatura: ramo.asignatura,
+            creditos: ramo.creditos,
+            nivel: ramo.nivel,
+            razon: ramo.advertencia ? '⚠️ Forzado por bloqueo' : razon,
+          });
+          creditosActuales += ramo.creditos;
+          asignados.add(ramo.codigo);
+          aprobadosSimulados.add(ramo.codigo);
+          console.log(`   ✓ ${ramo.codigo} (${ramo.creditos} SCT) - ${razon}`);
+        }
+      }
+      
+      // 3c. Si no alcanzamos el mínimo, intentar con ramos más pequeños
+      if (creditosActuales < minCreditosPorSemestre) {
+        const ramosPequenos = ramosRestantes
+          .filter(r => !asignados.has(r.codigo))
+          .sort((a, b) => a.creditos - b.creditos);
+        
+        for (const ramo of ramosPequenos) {
+          if (creditosActuales + ramo.creditos <= maxCreditosPorSemestre) {
+            semestreActual.push({
+              codigo: ramo.codigo,
+              asignatura: ramo.asignatura,
+              creditos: ramo.creditos,
+              nivel: ramo.nivel,
+              razon: 'Completar carga mínima',
+            });
+            creditosActuales += ramo.creditos;
+            asignados.add(ramo.codigo);
+            aprobadosSimulados.add(ramo.codigo);
+            console.log(`   ✓ ${ramo.codigo} (${ramo.creditos} SCT) - Carga mínima`);
+            
+            if (creditosActuales >= minCreditosPorSemestre) break;
+          }
+        }
+      }
+      
+      if (semestreActual.length === 0) break;
+      
+      console.log(`   📊 Total semestre: ${creditosActuales}/${maxCreditosPorSemestre} SCT, ${semestreActual.length} ramos`);
       
       semestres.push({
-        ...semestreActual,
         numero: semestreNumero++,
+        ramos: semestreActual,
+        totalCreditos: creditosActuales,
       });
     }
     
-    // FASE 1.5: Insertar ELECTIVOS en los semestres según su nivel
-    console.log(`\n📚 FASE 1.5: Distribuyendo electivos por nivel...`);
-    if (ramosElectivos.length > 0) {
-      const electivosPorNivel = new Map<number, any[]>();
-      ramosElectivos.forEach(electivo => {
-        if (!electivosPorNivel.has(electivo.nivel)) {
-          electivosPorNivel.set(electivo.nivel, []);
-        }
-        electivosPorNivel.get(electivo.nivel)!.push(electivo);
-      });
-      
-      // Para cada nivel de electivos, intentar insertarlos en semestres correspondientes
-      Array.from(electivosPorNivel.entries())
-        .sort((a, b) => a[0] - b[0]) 
-        .forEach(([nivel, electivos]) => {
-          console.log(`   📖 Procesando ${electivos.length} electivo(s) de nivel ${nivel}...`);
-          
-          // Buscar semestres que ya tengan ramos de ese nivel o cercano
-          const semestresCandidatos = semestres
-            .filter(s => {
-              const nivelesEnSemestre = s.ramos.map(r => r.nivel);
-              const nivelPromedio = nivelesEnSemestre.reduce((a, b) => a + b, 0) / nivelesEnSemestre.length;
-              // Buscar semestres con nivel similar (±1)
-              return Math.abs(nivelPromedio - nivel) <= 1;
-            })
-            .sort((a, b) => {
-              // Priorizar semestres con más espacio disponible
-              const espacioA = maxCreditosPorSemestre - a.totalCreditos;
-              const espacioB = maxCreditosPorSemestre - b.totalCreditos;
-              return espacioB - espacioA;
-            });
-          
-          // Intentar insertar cada electivo
-          for (const electivo of electivos) {
-            let insertado = false;
-            
-            // Intentar en semestres candidatos
-            for (const semestre of semestresCandidatos) {
-              if (semestre.totalCreditos + electivo.creditos <= maxCreditosPorSemestre) {
-                semestre.ramos.push({
-                  codigo: electivo.codigo,
-                  asignatura: electivo.asignatura,
-                  creditos: electivo.creditos,
-                  nivel: electivo.nivel,
-                  razon: '📚 Electivo - Formación profesional',
-                });
-                semestre.totalCreditos += electivo.creditos;
-                asignados.add(electivo.codigo);
-                insertado = true;
-                console.log(`      ✓ ${electivo.codigo} insertado en Semestre ${semestre.numero}`);
-                break;
-              }
-            }
-            
-            // Si no se pudo insertar, crear semestre nuevo o agregarlo al último
-            if (!insertado) {
-              if (semestres.length > 0) {
-                const ultimoSemestre = semestres[semestres.length - 1];
-                if (ultimoSemestre.totalCreditos + electivo.creditos <= maxCreditosPorSemestre) {
-                  ultimoSemestre.ramos.push({
-                    codigo: electivo.codigo,
-                    asignatura: electivo.asignatura,
-                    creditos: electivo.creditos,
-                    nivel: electivo.nivel,
-                    razon: '📚 Electivo - Formación profesional',
-                  });
-                  ultimoSemestre.totalCreditos += electivo.creditos;
-                  asignados.add(electivo.codigo);
-                  insertado = true;
-                  console.log(`✓ ${electivo.codigo} agregado al último semestre`);
-                }
-              }
-            }
-          }
-        });
-    }
-    
-    // FASE 2: Distribuir ramos TERMINALES (forzar llenado completo de semestres)
-    console.log(`\n🏁 FASE 2: Distribuyendo ramos terminales...`);
-    if (ramosTerminales.length > 0) {
-      const terminalesOrdenados = ramosTerminales
-        .filter(r => !asignados.has(r.codigo))
-        .sort((a, b) => {
-          if (a.nivel !== b.nivel) return a.nivel - b.nivel;
-          return b.creditos - a.creditos;
-        });
-      
-      let terminalesPorAgregar = [...terminalesOrdenados];
-      
-      // ESTRATEGIA: Llenar semestres existentes primero
-      // 1. Intentar agregar terminales al último semestre crítico si tiene espacio
-      if (semestres.length > 0) {
-        const ultimoSemestre = semestres[semestres.length - 1];
-        const espacioDisponible = maxCreditosPorSemestre - ultimoSemestre.totalCreditos;
-        
-        if (espacioDisponible >= 5) {
-          console.log(`   💡 Llenando el último semestre crítico (${espacioDisponible} SCT disponibles)...`);
-          
-          // Intentar llenar TODO el espacio disponible
-          let seguirAgregando = true;
-          while (seguirAgregando && terminalesPorAgregar.length > 0) {
-            const terminalQueCalza = terminalesPorAgregar.find(
-              t => t.creditos <= (maxCreditosPorSemestre - ultimoSemestre.totalCreditos)
-            );
-            
-            if (terminalQueCalza) {
-              ultimoSemestre.ramos.push({
-                codigo: terminalQueCalza.codigo,
-                asignatura: terminalQueCalza.asignatura,
-                creditos: terminalQueCalza.creditos,
-                nivel: terminalQueCalza.nivel,
-                razon: '🏁 Terminal - No desbloquea otros ramos',
-              });
-              ultimoSemestre.totalCreditos += terminalQueCalza.creditos;
-              asignados.add(terminalQueCalza.codigo);
-              terminalesPorAgregar = terminalesPorAgregar.filter(t => t.codigo !== terminalQueCalza.codigo);
-              
-              console.log(`      ✓ Agregado ${terminalQueCalza.codigo} (${ultimoSemestre.totalCreditos}/${maxCreditosPorSemestre} SCT)`);
-            } else {
-              seguirAgregando = false;
-            }
-          }
-        }
-      }
-      
-      // 2. Crear nuevos semestres LLENÁNDOLOS AL MÁXIMO
-      while (terminalesPorAgregar.length > 0) {
-        let creditosActuales = 0;
-        const ramosDelSemestre: SemestreOptimizado['ramos'] = [];
-        
-        console.log(`   📦 Creando nuevo semestre de terminales...`);
-        
-        // Algoritmo GREEDY: Llenar el semestre al máximo antes de crear otro
-        let seguirLlenando = true;
-        while (seguirLlenando && terminalesPorAgregar.length > 0) {
-          // Buscar el ramo más grande que quepa
-          const ramoQueCalza = terminalesPorAgregar
-            .filter(r => creditosActuales + r.creditos <= maxCreditosPorSemestre)
-            .sort((a, b) => b.creditos - a.creditos)[0]; // Más grande primero
-          
-          if (ramoQueCalza) {
-            ramosDelSemestre.push({
-              codigo: ramoQueCalza.codigo,
-              asignatura: ramoQueCalza.asignatura,
-              creditos: ramoQueCalza.creditos,
-              nivel: ramoQueCalza.nivel,
-              razon: '🏁 Terminal - No desbloquea otros ramos',
-            });
-            creditosActuales += ramoQueCalza.creditos;
-            terminalesPorAgregar = terminalesPorAgregar.filter(r => r.codigo !== ramoQueCalza.codigo);
-            
-            console.log(`✓ Agregado ${ramoQueCalza.codigo} (${creditosActuales}/${maxCreditosPorSemestre} SCT)`);
-          } else {
-            // No cabe ningún ramo más, terminar este semestre
-            seguirLlenando = false;
-            console.log(`⛔ Semestre lleno (${creditosActuales}/${maxCreditosPorSemestre} SCT)`);
-          }
-        }
-        
-        // Si solo quedó 1 ramo y hay semestres anteriores, combinarlo
-        if (ramosDelSemestre.length === 1 && semestres.length > 0) {
-          const ultimoSemestre = semestres[semestres.length - 1];
-          const ramo = ramosDelSemestre[0];
-          
-          if (ultimoSemestre.totalCreditos + ramo.creditos <= maxCreditosPorSemestre) {
-            console.log(`📌 Combinando último terminal con semestre anterior (${ramo.codigo})`);           
-            ultimoSemestre.ramos.push(ramo);
-            ultimoSemestre.totalCreditos += ramo.creditos;
-            asignados.add(ramo.codigo);
-            break;
-          }
-        }
-        
-        if (ramosDelSemestre.length === 0) break;
-        
-        semestres.push({
-          numero: semestreNumero++,
-          ramos: ramosDelSemestre,
-          totalCreditos: creditosActuales,
-        });
-        
-        ramosDelSemestre.forEach(r => asignados.add(r.codigo));
-      }
-    }
-    
-    // FASE 3: Agregar CAPSTONE (siempre en semestre propio)
-    console.log(`\n🎓 FASE 3: Agregando Capstone al final...`);
+    // FASE FINAL: Agregar CAPSTONE
+    console.log(`\n🎓 Agregando Capstone al final...`);
     if (capstones.length > 0) {
       const capstonesPendientes = capstones.filter(r => !asignados.has(r.codigo));
       
       if (capstonesPendientes.length > 0) {
-        console.log(`   📌 Creando semestre exclusivo para Capstone`);
-        
-        const semestreCapstone: SemestreOptimizado = {
+        semestres.push({
           numero: semestreNumero++,
           ramos: capstonesPendientes.map(r => ({
             codigo: r.codigo,
@@ -408,9 +282,7 @@ export class OptimizacionService {
             razon: '🎓 Proyecto Final - Capstone',
           })),
           totalCreditos: capstonesPendientes.reduce((sum, r) => sum + r.creditos, 0),
-        };
-        
-        semestres.push(semestreCapstone);
+        });
         capstonesPendientes.forEach(r => asignados.add(r.codigo));
       }
     }
@@ -429,11 +301,6 @@ export class OptimizacionService {
     console.log(`   - Total semestres: ${semestres.length}`);
     console.log(`   - Ramos asignados: ${asignados.size}/${ramosPendientes.length}`);
     console.log(`   - Ramos bloqueados: ${ramosBloqueados.length}`);
-    
-    const semestresConUnRamo = semestres.filter(s => s.ramos.length === 1);
-    if (semestresConUnRamo.length > 0) {
-      console.warn(`⚠️ Advertencia: ${semestresConUnRamo.length} semestres con solo 1 ramo`);
-    }
     
     return {
       semestres,
@@ -465,7 +332,8 @@ export class OptimizacionService {
   private armarSemestre(
     disponibles: any[],
     maxCreditos: number,
-    minCreditos: number
+    minCreditos: number,
+    electivosCandidatos: any[] = []
   ): Omit<SemestreOptimizado, 'numero'> {
     const ramos: SemestreOptimizado['ramos'] = [];
     let creditosActuales = 0;
@@ -494,6 +362,27 @@ export class OptimizacionService {
             : this.obtenerRazonSeleccion(ramo),
         });
         creditosActuales += ramo.creditos;
+      }
+    }
+    
+    // INTENTAR AGREGAR UN ELECTIVO (1) SI HAY CANDIDATO QUE QUEPA Y AÚN NO HAY ELECTIVO EN ESTE SEMESTRE
+    if (electivosCandidatos && electivosCandidatos.length > 0) {
+      const yaTieneElectivo = ramos.some(rr => {
+        const lower = (rr.asignatura || '').toString().toLowerCase();
+        return lower.includes('electiv') || lower.includes('formación profesional') || lower.includes('formacion profesional');
+      });
+      if (!yaTieneElectivo) {
+        const candidato = electivosCandidatos.find(e => creditosActuales + e.creditos <= maxCreditos);
+        if (candidato) {
+          ramos.push({
+            codigo: candidato.codigo,
+            asignatura: candidato.asignatura,
+            creditos: candidato.creditos,
+            nivel: candidato.nivel,
+            razon: '📚 Electivo reservado al generar semestre',
+          });
+          creditosActuales += candidato.creditos;
+        }
       }
     }
     
@@ -543,7 +432,24 @@ export class OptimizacionService {
         }
       }
     }
-
+    
+    // PASO FINAL: intentar rellenar al máximo con cualquier disponible restante (greedy)
+    const restantesParaRellenar = disponiblesSinTerminales.filter(r => !ramos.some(rr => rr.codigo === r.codigo));
+    // ordenar por crédito descendente para mejorar compactación
+    restantesParaRellenar.sort((a, b) => b.creditos - a.creditos);
+    for (const ramo of restantesParaRellenar) {
+      if (creditosActuales + ramo.creditos <= maxCreditos) {
+        ramos.push({
+          codigo: ramo.codigo,
+          asignatura: ramo.asignatura,
+          creditos: ramo.creditos,
+          nivel: ramo.nivel,
+          razon: 'Relleno greedy',
+        });
+        creditosActuales += ramo.creditos;
+      }
+    }
+    
     return {
       ramos,
       totalCreditos: creditosActuales,
