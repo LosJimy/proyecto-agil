@@ -100,6 +100,7 @@ export default function CrearProyeccionPage() {
     const semestre = proyeccionActual.semestres.find(s => s.numero === semestreNumero);
     
     if (semestre) {
+      // Validar que no exceda los 30 créditos
       const nuevosCreditos = semestre.totalCreditos + ramo.creditos;
       if (nuevosCreditos > MAX_CREDITOS_SEMESTRE) {
         setAlertaCreditos(
@@ -107,6 +108,39 @@ export default function CrearProyeccionPage() {
         );
         setTimeout(() => setAlertaCreditos(null), 4000);
         return;
+      }
+
+      // Validar prerrequisitos (son ALTERNATIVOS - necesita AL MENOS UNO)
+      if (ramo.prereq && ramo.prereq.trim() !== '') {
+        const prerequisitos = ramo.prereq.split(',').map(p => p.trim()).filter(p => p);
+        
+        // Obtener todos los ramos cursados ANTES de este semestre
+        const ramosAnteriores = new Set<string>();
+        for (let i = 1; i < semestreNumero; i++) {
+          const sem = proyeccionActual.semestres.find(s => s.numero === i);
+          if (sem) {
+            sem.ramos.forEach(r => ramosAnteriores.add(r.codigo));
+          }
+        }
+
+        // Verificar si tiene AL MENOS UN prerrequisito cumplido
+        const tieneAlMenosUno = prerequisitos.some(p => ramosAnteriores.has(p));
+        
+        if (!tieneAlMenosUno) {
+          // Buscar los nombres de los ramos prerrequisito
+          const nombresPrerreq = prerequisitos.map(codigo => {
+            const ramoInfo = malla.find(r => r.codigo === codigo);
+            return ramoInfo ? `${codigo} - ${ramoInfo.asignatura}` : codigo;
+          }).slice(0, 3); // Mostrar máximo 3
+
+          const masRamos = prerequisitos.length > 3 ? ` y ${prerequisitos.length - 3} más` : '';
+
+          setAlertaCreditos(
+            `❌ No puedes agregar ${ramo.codigo} aquí. Requiere al menos uno de: ${nombresPrerreq.join(', ')}${masRamos}`
+          );
+          setTimeout(() => setAlertaCreditos(null), 5000);
+          return;
+        }
       }
     }
 
