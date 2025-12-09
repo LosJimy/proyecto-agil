@@ -1,3 +1,5 @@
+// backend/src/malla/optimizacion.service.ts
+
 import { Injectable } from '@nestjs/common';
 
 export interface Ramo {
@@ -136,10 +138,18 @@ export class OptimizacionService {
     const capstones = ramosConPrioridad.filter(r => r.esCapstone);
     
     console.log(`📊 Distribución:`);
-    console.log(`   - Críticos normales: ${ramosCriticosNormales.length}`);
-    console.log(`   - Electivos (por nivel): ${ramosElectivos.length}`);
+    console.log(`   - Críticos (desbloquean): ${ramosCriticos.length}`);
+    console.log(`   - Electivos: ${ramosElectivos.length}`);
     console.log(`   - Terminales: ${ramosTerminales.length}`);
     console.log(`   - Capstone: ${capstones.length}`);
+    
+    // DEBUG: Mostrar algunos electivos detectados
+    if (ramosElectivos.length > 0) {
+      console.log(`   📋 Primeros 5 electivos:`);
+      ramosElectivos.slice(0, 5).forEach(e => {
+        console.log(`      - ${e.codigo}: ${e.asignatura} (${e.creditos} SCT, NF ${e.nivel})`);
+      });
+    }
     
     const semestres: SemestreOptimizado[] = [];
     const aprobadosSimulados = new Set(ramosAprobados);
@@ -149,25 +159,22 @@ export class OptimizacionService {
     const maxIteraciones = 30;
     let iteraciones = 0;
     
-    // FASE 1: Distribuir ramos CRÍTICOS NORMALES (no electivos)
-    console.log(`\n🔄 FASE 1: Distribuyendo ramos críticos normales...`);
-    while (asignados.size < ramosCriticosNormales.length && iteraciones < maxIteraciones) {
+    // FASE 1: Distribuir ramos CRÍTICOS (no electivos)
+    console.log(`\n🔄 FASE 1: Distribuyendo ramos críticos...`);
+    while (asignados.size < ramosCriticos.length && iteraciones < maxIteraciones) {
       iteraciones++;
       
-      // Obtener ramos críticos disponibles (necesitan AL MENOS UN prerrequisito cumplido)
-      let disponibles = ramosCriticosNormales
+      let disponibles = ramosCriticos
         .filter(ramo => {
           if (asignados.has(ramo.codigo)) return false;
           const prereqs = this.obtenerPrerrequisitos(ramo);
-          // Si no tiene prerrequisitos, está disponible
           if (prereqs.length === 0) return true;
-          // Si tiene prerrequisitos, necesita AL MENOS UNO aprobado (OR)
           return prereqs.some(p => aprobadosSimulados.has(p));
         })
         .sort((a, b) => this.compararPrioridad(a, b));
       
       if (disponibles.length === 0) {
-        const pendientes = ramosCriticosNormales.filter(r => !asignados.has(r.codigo));
+        const pendientes = ramosCriticos.filter(r => !asignados.has(r.codigo));
         if (pendientes.length === 0) break;
         
         const nivelMasBajo = Math.min(...pendientes.map(r => r.nivel));
@@ -203,7 +210,6 @@ export class OptimizacionService {
     // FASE 1.5: Insertar ELECTIVOS en los semestres según su nivel
     console.log(`\n📚 FASE 1.5: Distribuyendo electivos por nivel...`);
     if (ramosElectivos.length > 0) {
-      // Agrupar electivos por nivel
       const electivosPorNivel = new Map<number, any[]>();
       ramosElectivos.forEach(electivo => {
         if (!electivosPorNivel.has(electivo.nivel)) {
@@ -214,7 +220,7 @@ export class OptimizacionService {
       
       // Para cada nivel de electivos, intentar insertarlos en semestres correspondientes
       Array.from(electivosPorNivel.entries())
-        .sort((a, b) => a[0] - b[0]) // Ordenar por nivel ascendente
+        .sort((a, b) => a[0] - b[0]) 
         .forEach(([nivel, electivos]) => {
           console.log(`   📖 Procesando ${electivos.length} electivo(s) de nivel ${nivel}...`);
           
@@ -270,7 +276,7 @@ export class OptimizacionService {
                   ultimoSemestre.totalCreditos += electivo.creditos;
                   asignados.add(electivo.codigo);
                   insertado = true;
-                  console.log(`      ✓ ${electivo.codigo} agregado al último semestre`);
+                  console.log(`✓ ${electivo.codigo} agregado al último semestre`);
                 }
               }
             }
@@ -352,11 +358,11 @@ export class OptimizacionService {
             creditosActuales += ramoQueCalza.creditos;
             terminalesPorAgregar = terminalesPorAgregar.filter(r => r.codigo !== ramoQueCalza.codigo);
             
-            console.log(`      ✓ Agregado ${ramoQueCalza.codigo} (${creditosActuales}/${maxCreditosPorSemestre} SCT)`);
+            console.log(`✓ Agregado ${ramoQueCalza.codigo} (${creditosActuales}/${maxCreditosPorSemestre} SCT)`);
           } else {
             // No cabe ningún ramo más, terminar este semestre
             seguirLlenando = false;
-            console.log(`      ⛔ Semestre lleno (${creditosActuales}/${maxCreditosPorSemestre} SCT)`);
+            console.log(`⛔ Semestre lleno (${creditosActuales}/${maxCreditosPorSemestre} SCT)`);
           }
         }
         
@@ -365,10 +371,8 @@ export class OptimizacionService {
           const ultimoSemestre = semestres[semestres.length - 1];
           const ramo = ramosDelSemestre[0];
           
-          // Verificar si cabe en el último semestre
           if (ultimoSemestre.totalCreditos + ramo.creditos <= maxCreditosPorSemestre) {
-            console.log(`   📌 Combinando último terminal con semestre anterior (${ramo.codigo})`);
-            
+            console.log(`📌 Combinando último terminal con semestre anterior (${ramo.codigo})`);           
             ultimoSemestre.ramos.push(ramo);
             ultimoSemestre.totalCreditos += ramo.creditos;
             asignados.add(ramo.codigo);
@@ -428,7 +432,6 @@ export class OptimizacionService {
     console.log(`   - Ramos asignados: ${asignados.size}/${ramosPendientes.length}`);
     console.log(`   - Ramos bloqueados: ${ramosBloqueados.length}`);
     
-    // Verificar que no haya semestres con 1 solo ramo
     const semestresConUnRamo = semestres.filter(s => s.ramos.length === 1);
     if (semestresConUnRamo.length > 0) {
       console.warn(`⚠️ Advertencia: ${semestresConUnRamo.length} semestres con solo 1 ramo`);

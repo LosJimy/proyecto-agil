@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { obtenerMalla, obtenerAvance, obtenerRutaOptima, guardarProyeccion, type Ramo, type ProyeccionOptima } from '@/lib/api';
+import { obtenerMalla, obtenerAvance, obtenerRutaOptima, guardarProyeccion, type Ramo, type ProyeccionOptima, type AvanceItem } from '@/lib/api';
 import ModalNombre from '../components/ModalNombre';
 import HeaderProyeccion from '../components/HeaderProyeccion';
 import TarjetaSemestre from '../components/TarjetaSemestre';
@@ -13,6 +13,7 @@ const MAX_CREDITOS_SEMESTRE = 30;
 export default function CrearProyeccionPage() {
   const router = useRouter();
   const [malla, setMalla] = useState<Ramo[]>([]);
+  const [ramosAprobados, setRamosAprobados] = useState<Set<string>>(new Set());
   const [proyeccionOptima, setProyeccionOptima] = useState<ProyeccionOptima | null>(null);
   const [proyeccionActual, setProyeccionActual] = useState<ProyeccionOptima | null>(null);
   const [ramosDisponibles, setRamosDisponibles] = useState<Ramo[]>([]);
@@ -49,19 +50,17 @@ export default function CrearProyeccionPage() {
           rutaOptima.semestres.flatMap(s => s.ramos.map(r => r.codigo))
         );
 
-        const ramosAprobados = new Set(
+        const aprobados = new Set(
           avanceData.filter(a => a.status === 'APROBADO').map(a => a.course)
         );
+        setRamosAprobados(aprobados);
 
-        // Identificar ramos críticos (cursados 3+ veces)
-        // Contar cuántas veces aparece cada ramo en el avance
         const conteoRamos = new Map<string, number>();
         avanceData.forEach(item => {
           const count = conteoRamos.get(item.course) || 0;
           conteoRamos.set(item.course, count + 1);
         });
         
-        // Marcar como críticos los que tienen 3+ inscripciones
         const criticos = new Set(
           Array.from(conteoRamos.entries())
             .filter(([_, count]) => count >= 3)
@@ -69,15 +68,13 @@ export default function CrearProyeccionPage() {
         );
         setRamosCriticos(criticos);
 
-        // Los disponibles son SOLO los que NO están en la proyección óptima
-        // (ya están aprobados o están asignados a algún semestre)
         const disponibles = mallaData.filter(
-          r => !ramosAprobados.has(r.codigo) && !ramosAsignados.has(r.codigo)
+          r => !aprobados.has(r.codigo) && !ramosAsignados.has(r.codigo)
         );
         
-        console.log('Estadísticas:');
+        console.log('📊 Estadísticas:');
         console.log('- Total ramos malla:', mallaData.length);
-        console.log('- Ramos aprobados:', ramosAprobados.size);
+        console.log('- Ramos aprobados:', aprobados.size);
         console.log('- Ramos asignados en proyección:', ramosAsignados.size);
         console.log('- Ramos disponibles para agregar:', disponibles.length);
         
@@ -100,7 +97,6 @@ export default function CrearProyeccionPage() {
     const semestre = proyeccionActual.semestres.find(s => s.numero === semestreNumero);
     
     if (semestre) {
-      // Validar que no exceda los 30 créditos
       const nuevosCreditos = semestre.totalCreditos + ramo.creditos;
       if (nuevosCreditos > MAX_CREDITOS_SEMESTRE) {
         setAlertaCreditos(
@@ -110,28 +106,25 @@ export default function CrearProyeccionPage() {
         return;
       }
 
-      // Validar prerrequisitos (son ALTERNATIVOS - necesita AL MENOS UNO)
       if (ramo.prereq && ramo.prereq.trim() !== '') {
         const prerequisitos = ramo.prereq.split(',').map(p => p.trim()).filter(p => p);
         
-        // Obtener todos los ramos cursados ANTES de este semestre
-        const ramosAnteriores = new Set<string>();
+        const ramosCumplidos = new Set<string>(ramosAprobados);
+        
         for (let i = 1; i < semestreNumero; i++) {
           const sem = proyeccionActual.semestres.find(s => s.numero === i);
           if (sem) {
-            sem.ramos.forEach(r => ramosAnteriores.add(r.codigo));
+            sem.ramos.forEach(r => ramosCumplidos.add(r.codigo));
           }
         }
 
-        // Verificar si tiene AL MENOS UN prerrequisito cumplido
-        const tieneAlMenosUno = prerequisitos.some(p => ramosAnteriores.has(p));
+        const tieneAlMenosUno = prerequisitos.some(p => ramosCumplidos.has(p));
         
         if (!tieneAlMenosUno) {
-          // Buscar los nombres de los ramos prerrequisito
           const nombresPrerreq = prerequisitos.map(codigo => {
             const ramoInfo = malla.find(r => r.codigo === codigo);
             return ramoInfo ? `${codigo} - ${ramoInfo.asignatura}` : codigo;
-          }).slice(0, 3); // Mostrar máximo 3
+          }).slice(0, 3);
 
           const masRamos = prerequisitos.length > 3 ? ` y ${prerequisitos.length - 3} más` : '';
 
@@ -162,8 +155,85 @@ export default function CrearProyeccionPage() {
     setRamosDisponibles(ramosDisponibles.filter(r => r.codigo !== ramo.codigo));
   };
 
+  // ← NUEVA FUNCIÓN DE VALIDACIÓN
+  const validarEliminacionRamo = (semestreNumero: number, codigoRamo: string): { valido: boolean; mensaje?: string } => {
+    if (!proyeccionActual) return { valido: true };
+
+    const ramosDependientes: { codigo: string; asignatura: string; semestre: number }[] = [];
+
+    for (let i = semestreNumero + 1; i <= proyeccionActual.semestres.length; i++) {
+      const semestrePosterior = proyeccionActual.semestres.find(s => s.numero === i);
+      if (semestrePosterior) {
+        semestrePosterior.ramos.forEach(ramo => {
+          const ramoCompleto = malla.find(r => r.codigo === ramo.codigo);
+          if (ramoCompleto?.prereq) {
+            const prerequisitos = ramoCompleto.prereq.split(',').map(p => p.trim());
+            
+            if (prerequisitos.includes(codigoRamo)) {
+              const otrosPrereqCumplidos = prerequisitos.filter(p => p !== codigoRamo);
+              
+              const ramosCumplidosParaDependiente = new Set<string>(ramosAprobados);
+              
+              for (let j = 1; j < i; j++) {
+                const sem = proyeccionActual.semestres.find(s => s.numero === j);
+                if (sem) {
+                  sem.ramos.forEach(r => {
+                    if (r.codigo !== codigoRamo) {
+                      ramosCumplidosParaDependiente.add(r.codigo);
+                    }
+                  });
+                }
+              }
+              
+              const tieneOtroPrerequisito = otrosPrereqCumplidos.some(p => 
+                ramosCumplidosParaDependiente.has(p)
+              );
+              
+              if (!tieneOtroPrerequisito) {
+                ramosDependientes.push({
+                  codigo: ramo.codigo,
+                  asignatura: ramo.asignatura,
+                  semestre: i,
+                });
+              }
+            }
+          }
+        });
+      }
+    }
+
+    if (ramosDependientes.length > 0) {
+      const ramoEliminado = malla.find(r => r.codigo === codigoRamo);
+      const nombreRamoEliminado = ramoEliminado 
+        ? `${ramoEliminado.codigo} - ${ramoEliminado.asignatura}` 
+        : codigoRamo;
+
+      const ejemplos = ramosDependientes.slice(0, 3).map(r => 
+        `${r.codigo} (Semestre ${r.semestre})`
+      ).join(', ');
+      
+      const masRamos = ramosDependientes.length > 3 
+        ? ` y ${ramosDependientes.length - 3} más` 
+        : '';
+
+      return {
+        valido: false,
+        mensaje: `⚠️ No puedes eliminar "${nombreRamoEliminado}". Los siguientes ramos lo necesitan como prerrequisito: ${ejemplos}${masRamos}`
+      };
+    }
+
+    return { valido: true };
+  };
+
   const eliminarRamo = (semestreNumero: number, codigoRamo: string) => {
     if (!proyeccionActual) return;
+    const validacion = validarEliminacionRamo(semestreNumero, codigoRamo);
+    
+    if (!validacion.valido) {
+      setAlertaCreditos(validacion.mensaje || 'No se puede eliminar este ramo');
+      setTimeout(() => setAlertaCreditos(null), 6000);
+      return;
+    }
 
     const nuevaProyeccion = { ...proyeccionActual };
     const semestre = nuevaProyeccion.semestres.find(s => s.numero === semestreNumero);
@@ -225,14 +295,24 @@ export default function CrearProyeccionPage() {
 
   const restaurarOptima = () => {
     if (!proyeccionOptima) return;
+    
     setProyeccionActual(JSON.parse(JSON.stringify(proyeccionOptima)));
     
-    const ramosAsignados = new Set(
+    const ramosEnProyeccion = new Set(
       proyeccionOptima.semestres.flatMap(s => s.ramos.map(r => r.codigo))
     );
-    const disponibles = malla.filter(r => !ramosAsignados.has(r.codigo));
+    
+    const disponibles = malla.filter(
+      r => !ramosAprobados.has(r.codigo) && !ramosEnProyeccion.has(r.codigo)
+    );
+    
     setRamosDisponibles(disponibles);
     setAlertaCreditos(null);
+    
+    console.log('✅ Proyección óptima restaurada');
+    console.log(`   - Ramos en proyección: ${ramosEnProyeccion.size}`);
+    console.log(`   - Ramos aprobados: ${ramosAprobados.size}`);
+    console.log(`   - Ramos disponibles: ${disponibles.length}`);
   };
 
   const handleGuardar = async () => {
@@ -284,7 +364,6 @@ export default function CrearProyeccionPage() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      {/* Header */}
       <HeaderProyeccion
         totalSemestres={proyeccionActual?.totalSemestres || 0}
         totalCreditos={proyeccionActual?.totalCreditos || 0}
@@ -293,12 +372,11 @@ export default function CrearProyeccionPage() {
         onGuardar={() => setMostrarModalGuardar(true)}
       />
 
-      {/* Alerta de créditos */}
       {alertaCreditos && (
         <div className="mx-4 mt-2 bg-red-50 border-l-4 border-red-500 p-3 rounded flex items-start gap-2 animate-pulse">
           <AlertCircle className="text-red-500 flex-shrink-0 mt-0.5" size={18} />
           <div className="flex-1">
-            <p className="text-sm font-semibold text-red-800">Has alcanzado el límite de créditos</p>
+            <p className="text-sm font-semibold text-red-800">Alerta de validación</p>
             <p className="text-xs text-red-700 mt-0.5">{alertaCreditos}</p>
           </div>
         </div>
