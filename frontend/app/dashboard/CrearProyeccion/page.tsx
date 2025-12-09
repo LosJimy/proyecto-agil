@@ -384,9 +384,9 @@ export default function CrearProyeccionPage() {
 
       <div className="flex-1 p-3 overflow-auto">
         <div 
-          className="grid gap-2 h-full" 
+          className="grid gap-2 h-full overflow-x-auto"
           style={{ 
-            gridTemplateColumns: `repeat(${proyeccionActual?.semestres.length || 1}, minmax(180px, 1fr))`,
+          gridTemplateColumns: `repeat(${proyeccionActual?.semestres.length || 1}, 200px)`,
           }}
         >
           {proyeccionActual?.semestres.map((semestre) => (
