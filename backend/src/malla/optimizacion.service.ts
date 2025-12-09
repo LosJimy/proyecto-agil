@@ -1,5 +1,3 @@
-// backend/src/malla/optimizacion.service.ts
-
 import { Injectable } from '@nestjs/common';
 
 export interface Ramo {

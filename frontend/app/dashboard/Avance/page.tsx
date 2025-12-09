@@ -1,3 +1,4 @@
+// frontend/app/dashboard/avance-curricular/page.tsx
 'use client';
 import { useEffect, useState } from 'react';
 import { getUser } from '@/lib/session';
@@ -18,8 +19,8 @@ export default function AvanceCurricularPage() {
           obtenerAvance()
         ]);
 
-        console.log('Malla cargada:', mallaData.length, 'ramos');
-        console.log('Avance cargado:', avanceData.length, 'ramos cursados');
+        console.log('📚 Malla cargada:', mallaData.length, 'ramos');
+        console.log('📊 Avance cargado:', avanceData.length, 'registros totales');
         
         setRamos(mallaData);
         setAvance(avanceData);
@@ -35,20 +36,26 @@ export default function AvanceCurricularPage() {
     fetchData();
   }, []);
 
-  // Verificar si un ramo está aprobado
-  const estaAprobado = (codigoRamo: string): boolean => {
-    return avance.some((item) => 
-      item.course === codigoRamo && 
-      item.status === 'APROBADO'
-    );
-  };
+  // ← FIX: Obtener el estado MÁS RECIENTE de un ramo
+  const obtenerEstadoActual = (codigoRamo: string): { aprobado: boolean; cursando: boolean; veces: number } => {
+    const registros = avance.filter(item => item.course === codigoRamo);
+    
+    if (registros.length === 0) {
+      return { aprobado: false, cursando: false, veces: 0 };
+    }
 
-  // Verificar si un ramo está siendo cursado actualmente
-  const estaCursando = (codigoRamo: string): boolean => {
-    return avance.some((item) => 
-      item.course === codigoRamo && 
-      (item.status === 'INSCRITO' || item.status === 'CURSANDO')
+    // Ordenar por período (más reciente primero)
+    const ordenados = registros.sort((a, b) => 
+      String(b.period).localeCompare(String(a.period))
     );
+
+    const ultimoRegistro = ordenados[0];
+    
+    return {
+      aprobado: ultimoRegistro.status === 'APROBADO',
+      cursando: ultimoRegistro.status === 'INSCRITO' || ultimoRegistro.status === 'CURSANDO',
+      veces: registros.length
+    };
   };
 
   // Agrupar ramos por nivel
@@ -59,12 +66,6 @@ export default function AvanceCurricularPage() {
   }, {} as Record<number, Ramo[]>);
 
   const nivelMaximo = Math.max(...Object.keys(ramosPorNivel).map(Number), 0);
-  
-  // Calcular el máximo de ramos en un semestre
-  const maxRamosPorSemestre = Math.max(
-    ...Object.values(ramosPorNivel).map(arr => arr.length),
-    0
-  );
 
   const toRoman = (num: number): string => {
     const romans = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
@@ -80,13 +81,25 @@ export default function AvanceCurricularPage() {
     return carreras[nombreCorto] || nombreCorto;
   };
 
-  // Calcular estadísticas
-  const ramosAprobados = avance.filter(a => a.status === 'APROBADO').length;
-  const ramosCursando = avance.filter(a => a.status === 'INSCRITO' || a.status === 'CURSANDO').length;
-  const creditosAprobados = ramos
-    .filter(ramo => estaAprobado(ramo.codigo))
+  // ← FIX: Calcular estadísticas CORRECTAMENTE (solo ramos únicos por estado actual)
+  const ramosConEstado = ramos.map(ramo => ({
+    ...ramo,
+    estado: obtenerEstadoActual(ramo.codigo)
+  }));
+
+  const ramosAprobados = ramosConEstado.filter(r => r.estado.aprobado).length;
+  const ramosCursando = ramosConEstado.filter(r => r.estado.cursando).length;
+  
+  const creditosAprobados = ramosConEstado
+    .filter(r => r.estado.aprobado)
     .reduce((sum, ramo) => sum + ramo.creditos, 0);
+  
   const creditosTotales = ramos.reduce((sum, ramo) => sum + ramo.creditos, 0);
+
+  console.log('✅ Estadísticas calculadas:');
+  console.log('   - Ramos aprobados:', ramosAprobados);
+  console.log('   - Ramos cursando:', ramosCursando);
+  console.log('   - Créditos aprobados:', creditosAprobados, '/', creditosTotales);
 
   if (loading) {
     return (
@@ -116,9 +129,9 @@ export default function AvanceCurricularPage() {
       <div className="flex-shrink-0 px-4 py-2 border-b border-gray-300 bg-white">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold text-gray-900">Avance Curricular</h1>
+            <h1 className="text-xl font-bold text-gray-900">AVANCE CURRICULAR</h1>
             {user?.carreras?.[0] && (
-              <div className="text-xs text-gray-700 font-medium">
+              <div className="text-xs text-teal-700 font-medium">
                 {getNombreCarrera(user.carreras[0].nombre)}
               </div>
             )}
@@ -141,14 +154,14 @@ export default function AvanceCurricularPage() {
             <div className="ml-4">
               <span className="text-gray-600">Progreso: </span>
               <span className="font-bold text-teal-700">
-                {Math.round((creditosAprobados / creditosTotales) * 100)}%
+                {creditosTotales > 0 ? Math.round((creditosAprobados / creditosTotales) * 100) : 0}%
               </span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Grid de malla - se ajusta dinámicamente */}
+      {/* Grid de malla */}
       <div className="flex-1 p-3 overflow-hidden">
         <div 
           className="h-full grid gap-2" 
@@ -164,12 +177,10 @@ export default function AvanceCurricularPage() {
                 key={nivel} 
                 className="flex flex-col border border-gray-300 rounded-lg bg-white overflow-hidden"
               >
-                {/* Header del semestre */}
-                <div className="flex-shrink-0 bg-teal-800 text-white text-center py-2 font-bold text-sm">
+                <div className="flex-shrink-0 bg-teal-700 text-white text-center py-2 font-bold text-sm">
                   {toRoman(nivel)}
                 </div>
 
-                {/* Contenedor de ramos - se distribuyen equitativamente */}
                 <div 
                   className="flex-1 flex flex-col p-1.5 gap-1.5"
                   style={{
@@ -178,41 +189,49 @@ export default function AvanceCurricularPage() {
                   }}
                 >
                   {ramosSemestre.map((ramo) => {
-                    const aprobado = estaAprobado(ramo.codigo);
-                    const cursando = estaCursando(ramo.codigo);
+                    const estado = obtenerEstadoActual(ramo.codigo);
+                    const esCritico = estado.veces >= 3;
 
                     return (
                       <div
                         key={ramo.codigo}
                         className={`
                           rounded p-1.5 flex flex-col justify-between relative transition-all
-                          ${aprobado ? 'bg-white border-l-4 border-green-500' : 
-                            cursando ? 'bg-yellow-50 border-l-4 border-yellow-500' : 
+                          ${estado.aprobado ? 'bg-white border-l-4 border-green-500' : 
+                            estado.cursando ? 'bg-yellow-50 border-l-4 border-yellow-500' : 
+                            esCritico ? 'bg-red-50 border-l-4 border-red-500' :
                             'bg-gray-50 border-l-4 border-gray-300'}
                         `}
+                        title={esCritico ? `⚠️ Ramo crítico (${estado.veces} intentos)` : ramo.asignatura}
                       >
-                        {/* Código del ramo */}
-                        <div className="text-[10px] font-bold text-gray-700 mb-0.5">
+                        {esCritico && (
+                          <div className="absolute -top-1 -left-1 bg-red-600 text-white text-[8px] font-bold px-1 rounded z-10">
+                            {estado.veces}x
+                          </div>
+                        )}
+
+                        <div className={`text-[10px] font-bold mb-0.5 ${
+                          esCritico ? 'text-red-700' : 'text-gray-700'
+                        }`}>
                           {ramo.codigo}
                         </div>
 
-                        {/* Nombre del ramo - 2 líneas max */}
                         <div 
                           className={`text-[11px] font-semibold leading-tight line-clamp-2 mb-1 ${
-                            aprobado ? 'text-green-800' : 
-                            cursando ? 'text-yellow-800' : 
+                            estado.aprobado ? 'text-green-800' : 
+                            estado.cursando ? 'text-yellow-800' : 
+                            esCritico ? 'text-red-800' :
                             'text-gray-800'
                           }`}
-                          title={ramo.asignatura}
                         >
                           {ramo.asignatura}
                         </div>
 
-                        {/* Footer compacto */}
                         <div className="flex items-center justify-between text-[10px] pt-1 border-t border-gray-200">
                           <span className={`font-medium ${
-                            aprobado ? 'text-green-700' : 
-                            cursando ? 'text-yellow-700' : 
+                            estado.aprobado ? 'text-green-700' : 
+                            estado.cursando ? 'text-yellow-700' : 
+                            esCritico ? 'text-red-700' :
                             'text-gray-500'
                           }`}>
                             NF: {ramo.nivel}
@@ -222,10 +241,10 @@ export default function AvanceCurricularPage() {
                           </span>
                         </div>
 
-                        {/* Indicador visual pequeño */}
                         <div className={`absolute top-1 right-1 w-2 h-2 rounded-full ${
-                          aprobado ? 'bg-green-500' : 
-                          cursando ? 'bg-yellow-500' : 
+                          estado.aprobado ? 'bg-green-500' : 
+                          estado.cursando ? 'bg-yellow-500' : 
+                          esCritico ? 'bg-red-600' :
                           'bg-gray-400'
                         }`}></div>
                       </div>
